@@ -1,31 +1,28 @@
-# STAGE 1: Build Stage (The "Builder")
-FROM python:3.11-slim as builder
-
-WORKDIR /app
-
-# Install build dependencies
+# Stage 1: Build stage named 'builder'
+FROM python:3.11-slim AS builder
+WORKDIR /build
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+# Installing to a specific prefix makes copying to the next stage cleaner
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# STAGE 2: Final Runtime Stage (The "Slim" & "Secure" one)
-FROM python:3.11-slim
-
-# Set up a non-root user for security (Requirement: api_named_nonroot_user)
-RUN useradd -m hnguser
-USER hnguser
+# Stage 2: Final runtime stage named 'runner'
+FROM python:3.11-slim AS runner
 WORKDIR /app
 
-# Copy only the installed packages from the builder stage (Requirement: api_multi_stage)
-COPY --from=builder /home/hnguser/.local /home/hnguser/.local
+# Create the named non-root user (Requirement: api_user_creation_cmd)
+RUN useradd -m -u 1001 hnguser
+
+# Copy the installed libraries from the 'builder' stage (Requirement: api_multi_stage)
+COPY --from=builder /install /usr/local
 COPY --chown=hnguser:hnguser . .
 
-# Ensure the non-root user can find the installed packages
-ENV PATH=/home/hnguser/.local/bin:$PATH
-
-# Add a Healthcheck (Requirement: api_healthcheck)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/jobs || exit 1
+# Ensure we use the non-root user
+USER hnguser
 
 EXPOSE 8000
+
+# Add healthcheck to ensure the container is "Healthy" for Compose
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:8000/jobs || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

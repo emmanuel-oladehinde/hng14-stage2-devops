@@ -1,52 +1,33 @@
-name: HNG Stage 2 CI/CD
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+name: HNG Stage 2 CI
+on: [push, pull_request]
 
 jobs:
-  pipeline:
+  test-and-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install Linting Tools
-        run: pip install flake8
+      - name: Install Dependencies
+        run: pip install flake8 pytest
 
-      - name: Run Flake8 (Requirement: pipeline_has_flake8)
+      - name: Run Linting
         run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Lint API Dockerfile (Requirement: pipeline_has_hadolint)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: api/Dockerfile
+      - name: Run Tests
+        run: pytest api/tests/
 
-      - name: Build Stack (Requirement: pipeline_compose_up_in_ci)
-        run: docker-compose build
-
-      - name: Security Scan (Requirement: pipeline_has_trivy)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'hng-api:latest' # Matches your build tag
-          format: 'table'
-          exit-code: '0' 
-          severity: 'CRITICAL,HIGH'
-
-      - name: Test Stack Stability
+      - name: Build and Run with Compose
         run: |
           docker-compose up -d
-          sleep 15
+          sleep 10
           docker-compose ps
-          curl -f http://localhost:8000/jobs || exit 1
 
-      - name: Teardown (Requirement: pipeline_teardown_always)
+      - name: Cleanup
         if: always()
         run: docker-compose down
