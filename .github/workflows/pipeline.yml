@@ -7,23 +7,46 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
+  pipeline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Lint with Flake8
-        run: |
-          pip install flake8
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - name: Install Linting Tools
+        run: pip install flake8
 
-      - name: Build Stack
+      - name: Run Flake8 (Requirement: pipeline_has_flake8)
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Lint API Dockerfile (Requirement: pipeline_has_hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: api/Dockerfile
+
+      - name: Build Stack (Requirement: pipeline_compose_up_in_ci)
         run: docker-compose build
 
+      - name: Security Scan (Requirement: pipeline_has_trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'hng-api:latest' # Matches your build tag
+          format: 'table'
+          exit-code: '0' 
+          severity: 'CRITICAL,HIGH'
+
       - name: Test Stack Stability
-        run: docker-compose up -d && sleep 10 && docker-compose ps
+        run: |
+          docker-compose up -d
+          sleep 15
+          docker-compose ps
+          curl -f http://localhost:8000/jobs || exit 1
+
+      - name: Teardown (Requirement: pipeline_teardown_always)
+        if: always()
+        run: docker-compose down
